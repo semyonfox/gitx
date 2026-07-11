@@ -1,97 +1,66 @@
-# Idea Bank
+# Deferred Idea Bank
 
-## Names
+> Parking lot only. Nothing here is scheduled, promised, or implemented merely because it is listed. See the [current roadmap](phase-1-roadmap.md) for active work.
 
-Working name: GitX.
+The core repo runner, agent-readable inspection, package compatibility, and cache direction are documented elsewhere; this file holds options that still need product evidence or design decisions.
 
-Other possible names:
+## Promotion Rule
 
-- RepoX
-- RPX
-- RunRepo
-- GitRun
-- FetchRun
-- RepoExec
+Move an idea into the roadmap only when it has:
 
-GitX is clear, but check naming conflicts before publishing.
+- a concrete user problem that the current CLI does not solve;
+- a security and compatibility boundary;
+- testable acceptance criteria and a place in the milestone order.
 
-## Product Ideas
+## Candidate Capabilities
 
-### Safer Repo Runner
+### Private Team Catalog
 
-The main wedge. Run tools from Git repos with commit pinning, temporary execution, and visible risk.
+Let a team publish an approved set of private repo tools under short names, for example `engineering/deploy-helper@v2`. This needs an ownership, authentication, and policy model before command syntax is worth fixing.
 
-### Private Team Tool Catalog
+### User And Team Trust Policies
 
-A team can maintain a list of approved private repo tools:
+Allow local or managed rules such as permitted hosts, required commit pins, denied permissions, and trusted signers. Keep this separate from the basic `allow`/`ask`/`deny` result until policy precedence and overrides are designed.
 
-```bash
-gitx catalog add engineering git@github.com:org/tools.git
-gitx run engineering/deploy-helper@v2
-```
+### Signed Release Policy
 
-### Agent-Safe Command Gate
+Verify signed tags or commits against configured trust roots. The open design work is key discovery, trust storage, rotation, and useful behavior when signatures are absent or unverifiable.
 
-Agents can call:
+### Team Lockfile Or Approval Record
 
-```bash
-gitx inspect --json github:owner/repo@main
-```
+Record immutable repo commits or package integrities that a team has reviewed. Decide whether this is a portable lockfile, a local approval database, or part of a future policy service.
 
-Then decide whether to continue, refuse, or ask the user.
+### Optional Registry Index
 
-### Repo-Native Publishing
+Add discoverability without making a central registry necessary for execution. Promotion depends on evidence that direct Git and npm discovery are insufficient.
 
-Instead of publishing to NPM, a maintainer tags a release and ships a manifest. The repo is the package.
+### Lazy Workspace Materialization
 
-### Trust Policies
+Fetch or materialize only the paths needed to run a tool. This should wait until the simpler identity-keyed cache is measured and its bottlenecks are understood.
 
-Local policy file:
+### Hosted Integrations
 
-```toml
-[trust]
-allow_hosts = ["github.com"]
-require_pinned_commit = true
-allow_network = false
-```
+Possible integrations include a GitHub App that reports install risk, a shared catalog service, and precomputed signed scan reports. Each creates a service and trust boundary that the local CLI does not currently need.
 
-### Signed Releases
+### Broader Workspace Or Source-Control Experiments
 
-Warn unless the selected tag or commit is signed by a trusted key.
+Workspace sync, lazy repository mounts, or deeper VCS behavior may eventually grow from the cache layer. They are separate products unless the runner produces a specific need for them.
 
-### Lazy Workspace Mode
+## Open Product Questions
 
-A longer-term bridge into the source-control idea: mount or materialize only the needed paths from a repo when a tool runs.
+- What useful access controls can GitX enforce consistently across Linux, macOS, and Windows?
+- Should manifests ever permit install or build steps, and how would those steps be scanned and confirmed?
+- How should GitX expose the gap between declared permissions and actual OS-level access?
+- What private-repository UX works with existing credentials without GitX collecting secrets?
+- Which facts make an approval reusable, and which source changes must invalidate it?
 
-### Registry Index
+## Brand Fallbacks
 
-Optional later layer for discoverability. Keep it separate from execution so GitX does not need a central registry to be useful.
+The working name is GitX. Check naming and package/binary conflicts before public distribution. If a change is required, earlier alternatives were RepoX, RPX, RunRepo, GitRun, FetchRun, and RepoExec.
 
-## Hard Questions
+## Topics Documented Elsewhere
 
-- How much sandboxing is realistic cross-platform?
-- Should GitX use system Git or libgit2?
-- What is the first runtime?
-- Should manifests allow install/build steps?
-- How does the tool prevent a manifest from lying about permissions?
-- What UX is strict enough for safety but not so noisy that users ignore it?
-- How should private repo auth work without collecting secrets?
-- Should there be a lockfile for teams?
-
-## Good Demo Scenarios
-
-### Public Tool
-
-Run a tiny formatter or repo auditor directly from GitHub.
-
-### Private Tool
-
-Run a private team script using existing SSH auth.
-
-### Agent Safety
-
-Show an agent inspecting a command, noticing mutable `main` plus network plus env access, and asking before running.
-
-### Cache Immutability
-
-Run a tag, resolve it to a commit, run again from cache, then show that a moved branch triggers a fresh warning.
+- The safer repo runner and agent inspection are the current product, not deferred ideas: see [Product Scope](product-scope.md).
+- Package-runner behavior and local cache design live in [Runner Compatibility](runner-compatibility.md).
+- A hosted immutable cache is explored in [Cache and CDN Design](cdn-cache.md).
+- Demo and release work belongs in the [current roadmap](phase-1-roadmap.md), where it can have acceptance criteria.
