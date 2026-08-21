@@ -228,14 +228,14 @@ pub struct InstalledToolMatch {
 }
 
 pub fn install(input: &str, name_override: Option<&str>) -> Result<String> {
+    if let Some(name) = name_override {
+        validate_tool_name(name)?;
+    }
+
     if !cfg!(unix) {
         return Err(GitxError::Message(
             "managed install shims are currently supported only on Unix-like systems".to_string(),
         ));
-    }
-
-    if let Some(name) = name_override {
-        validate_tool_name(name)?;
     }
 
     let paths = InstallPaths::discover();
