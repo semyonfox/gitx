@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: gitx
+          - name: x86_64-apple-darwin
+            os: macos-13
+            binary: gitx
+          - name: aarch64-apple-darwin
+            os: macos-14
+            binary: gitx
+          - name: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary: gitx.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Upload release binary
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: gitx-${{ matrix.name }}
+          path: target/release/${{ matrix.binary }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+      - name: Package release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir dist
+          tag="${GITHUB_REF_NAME}"
+          for target in x86_64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            tar -C "artifacts/gitx-${target}" -czf "dist/gitx-${tag}-${target}.tar.gz" gitx
+          done
+          cd artifacts/gitx-x86_64-pc-windows-msvc
+          zip "../../dist/gitx-${tag}-x86_64-pc-windows-msvc.zip" gitx.exe
+          cd ../..
+          sha256sum dist/* > dist/SHA256SUMS
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
+            prerelease+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes "${prerelease[@]}"
