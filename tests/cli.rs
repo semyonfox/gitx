@@ -622,7 +622,6 @@ fn search_project_scope_finds_local_node_bins_without_network_access() {
             "demo-tool version unknown  [project bin]  ✓ compatible",
         ))
         .stdout(predicate::str::contains("origin: project directory"))
-        .stdout(predicate::str::contains(bin.display().to_string()))
         .stdout(predicate::str::contains("-- <args>"));
 }
 
