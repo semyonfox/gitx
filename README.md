@@ -20,7 +20,26 @@ See [Product Scope](docs/product-scope.md) for the durable product contract.
 
 ## Install
 
-GitX needs Git plus Rust 1.88 or newer with Cargo. Copy and run:
+GitX 0.3.0-rc.1 has prebuilt binaries for Linux, macOS, and Windows. Download
+the archive for your platform from the [release page](https://github.com/semyonfox/gitx/releases), extract it, then put `gitx` on your `PATH`.
+
+On Linux and macOS:
+
+```bash
+tar -xzf gitx-*.tar.gz
+mkdir -p ~/.local/bin
+install -m 755 gitx ~/.local/bin/gitx
+gitx --version
+```
+
+On Windows, extract the ZIP archive and add its directory to `PATH`, then run:
+
+```powershell
+gitx.exe --version
+```
+
+GitX needs Git at runtime. If you prefer to build from source, install Rust
+1.88 or newer with Cargo, then run:
 
 ```bash
 git clone https://github.com/semyonfox/gitx.git
@@ -29,7 +48,7 @@ cargo install --path . --locked
 gitx --version
 ```
 
-`cargo install` builds the release binary and installs it in
+`cargo install` builds the binary and installs it in
 `$CARGO_HOME/bin`, usually `~/.cargo/bin`. Rustup normally adds that directory
 to `PATH`. If `gitx --version` is not found, run
 `export PATH="$HOME/.cargo/bin:$PATH"` and retry. Install Rust with
