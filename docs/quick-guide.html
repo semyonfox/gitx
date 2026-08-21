@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A practical GitX 0.3.0 command guide and benchmark summary.">
+  <title>GitX quick guide</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.5; }
+    body { margin: 0; background: #f7f7f5; color: #1a1a18; }
+    main { width: min(960px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0 4rem; }
+    header { border-bottom: 1px solid #d8d8d2; padding-bottom: 1.5rem; }
+    h1 { margin: 0; font-size: clamp(2rem, 6vw, 4rem); letter-spacing: -0.05em; }
+    h2 { margin: 2.7rem 0 0.75rem; font-size: 1.45rem; letter-spacing: -0.02em; }
+    h3 { margin: 1.5rem 0 0.5rem; font-size: 1.1rem; }
+    p { max-width: 75ch; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { background: #eaeae5; border-radius: 0.2rem; padding: 0.08rem 0.25rem; }
+    pre { overflow-x: auto; background: #1e211e; color: #eef0ea; border-radius: 0.45rem; padding: 1rem; line-height: 1.45; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.94rem; }
+    th, td { text-align: left; vertical-align: top; padding: 0.55rem; border-bottom: 1px solid #d8d8d2; }
+    th { font-weight: 700; }
+    .lead { font-size: 1.2rem; max-width: 62ch; }
+    .callout { border-left: 4px solid #176b4d; background: #e8f2ec; padding: 0.8rem 1rem; border-radius: 0 0.35rem 0.35rem 0; }
+    .muted { color: #5b5c56; }
+    details { border: 1px solid #d8d8d2; border-radius: 0.45rem; padding: 0.7rem 0.9rem; margin: 0.65rem 0; background: #fcfcfa; }
+    summary { cursor: pointer; font-weight: 700; }
+    footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #d8d8d2; color: #5b5c56; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #151615; color: #ecece7; }
+      header, footer, th, td { border-color: #3b3d38; }
+      code { background: #2a2c28; }
+      .callout { background: #183626; border-color: #55bd8a; }
+      .muted { color: #b7b8b0; }
+      details { background: #1d1f1d; border-color: #3b3d38; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="muted">GitX 0.3.0</p>
+      <h1>GitX quick guide</h1>
+      <p class="lead">Find a tool, see where it came from, inspect it, then run an exact version. GitX is an opinionated wrapper around the tools already on your machine. It does not replace npm, Bun, pnpm, Git, or your platform package manager.</p>
+    </header>
+
+    <section>
+      <h2>Start here</h2>
+      <pre><code>gitx doctor
+gitx search ripgrep --device
+gitx search formatter --source npm,github --details 1
+gitx inspect npm:prettier@3.6.2
+gitx exec prettier@3.6.2 --preview
+gitx exec prettier@3.6.2 --yes -- --check README.md</code></pre>
+      <p><code>search</code>, <code>inspect</code>, and <code>--preview</code> never run a tool. <code>run</code> and <code>exec</code> ask before they run unless you pass <code>--yes</code>.</p>
+      <p class="callout">Use native tools when you know exactly what you want and raw speed matters. Use GitX when you want search across sources, a precise origin and version, compatibility notes, an update diff, or a preflight check.</p>
+    </section>
+
+    <section>
+      <h2>The command tree</h2>
+      <pre><code>gitx [--color auto|always|never] [-v...] [--progress auto|always|never]
+├── inspect SOURCE [--format text|json]
+├── run SOURCE [--yes] [--preview] [-- ARGS...]
+├── exec [TARGET] [-p PACKAGE]... [--bin BIN]
+│   [--backend auto|bun|npm|pnpm] [--yes]
+│   [--allow-scripts] [--allow-dangerous-scripts] [--preview] [-- ARGS...]
+├── search QUERY [--recommend] [-n 1..20]
+│   [--source SOURCE[,SOURCE]...] [--project DIR]
+│   [--select SELECTION | --interactive | --details RESULT]
+│   [--offline] [--device] [--catalog ID[,ID]...] [--format text|json]
+├── install SOURCE [--as NAME]
+├── update TOOL [--check]
+├── list
+├── remove TOOL
+├── cache
+│   ├── list
+│   ├── clear
+│   ├── remove KEY
+│   └── import PACKAGE [--from auto|all|npm|pnpm|bun]
+├── doctor
+└── completion bash|elvish|fish|powershell|zsh</code></pre>
+      <p>Every command accepts <code>--help</code>. The root command accepts <code>--version</code>. GitX colours human-readable output on a real terminal. Use <code>--color always</code> to force ANSI colour in a pager, or <code>--color never</code> for plain logs and scripts. <code>NO_COLOR</code> also disables automatic colour.</p>
+      <table>
+        <thead><tr><th>Global option</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>-v</code>, <code>--verbose</code></td><td>Write resolution, policy, and backend hand-off steps to standard error. Repeat as <code>-vv</code> for source-level search detail.</td></tr>
+          <tr><td><code>--progress auto</code></td><td>Draw GitX-owned transfer progress and Git activity on an interactive standard-error terminal.</td></tr>
+          <tr><td><code>--progress always</code></td><td>Force the animated renderer when a terminal-aware wrapper hides TTY detection.</td></tr>
+          <tr><td><code>--progress never</code></td><td>Disable progress for logs and strict stderr parsers.</td></tr>
+        </tbody>
+      </table>
+      <p>Verbose lines and progress stay on standard error, so JSON stays machine-readable on standard output. GitX draws an exact byte bar only for a transfer it owns, currently cache imports and the internal tarball downloader. Git fetches use the animated <code>C---</code> marker because GitX cannot know their byte total. npm, Bun, and pnpm retain their own download UI after GitX hands work to them.</p>
+      <pre><code>$ gitx -v cache import cowsay@1.6.0 --from npm
+:: Reading GitX cache
+:: Importing a verified package tarball from the local cache
+[##########--------] -C-- Importing cached package tarball  12 KiB / 22 KiB  54%
+:: Importing cached package tarball complete: 22 KiB / 22 KiB</code></pre>
+    </section>
+
+    <section>
+      <h2>Search without running anything</h2>
+      <pre><code>gitx search eslint --device
+gitx search eslint --source npm,github --details 1
+gitx search eslint --offline --source installed,cache
+gitx search eslint --source cache --select 1
+gitx search eslint --catalog company-tools --format json</code></pre>
+      <table>
+        <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>--recommend</code></td><td>Mark the strongest displayed result as a suggestion. It never executes a tool.</td></tr>
+          <tr><td><code>--device</code></td><td>Strictly local search. It reads GitX state, project bins, local caches, and usable platform catalogs. It never calls a registry or Git host.</td></tr>
+          <tr><td><code>--source</code></td><td>Pick one or more sources. Repeat it or separate values with commas.</td></tr>
+          <tr><td><code>--project DIR</code></td><td>Choose the directory whose <code>node_modules/.bin</code> GitX searches. The default is the current directory.</td></tr>
+          <tr><td><code>--offline</code></td><td>Skip remote sources. An explicitly requested remote source fails rather than changing your request.</td></tr>
+          <tr><td><code>--details 1</code></td><td>Show the full card for result 1, including origin, version, description, compatibility, and next action.</td></tr>
+          <tr><td><code>--select 1-3</code></td><td>Print next commands for results. It does not execute them.</td></tr>
+          <tr><td><code>--interactive</code></td><td>Prompt for result numbers in a terminal. It also only prints commands.</td></tr>
+          <tr><td><code>--limit 1..20</code></td><td>Set the result limit. The default is 10.</td></tr>
+          <tr><td><code>--catalog ID</code></td><td>Run a named user catalog from the GitX catalog configuration. Repeat it or separate values with commas.</td></tr>
+          <tr><td><code>--format json</code></td><td>Return machine-readable schema-version-2 output.</td></tr>
+        </tbody>
+      </table>
+      <p>Sources are <code>all</code>, <code>device</code>, <code>npm</code>, <code>bun</code>, <code>github</code>, <code>gitlab</code>, <code>codeberg</code>, <code>aur</code>, <code>installed</code>, <code>cache</code>, <code>project</code>, <code>system</code>, <code>apt</code>, <code>pacman</code>, <code>flatpak</code>, <code>snap</code>, <code>cargo</code>, <code>python</code>, and <code>npm-global</code>. The platform-specific ones appear only when they are available on the machine.</p>
+      <p>GitX uses at most four local providers and four remote providers at once. Results still appear in a stable source order. With <code>-v</code>, GitX names every remote source as it begins. With <code>-vv</code>, it also reports source-level completion counts.</p>
+    </section>
+
+    <section>
+      <h2>Inspect and run</h2>
+      <pre><code>gitx inspect ./tool
+gitx inspect github:owner/repo@v1.2.0
+gitx inspect npm:prettier@3.6.2 --format json
+
+gitx run ./tool -- --fix
+gitx run github:owner/repo@v1.2.0 --preview
+gitx run github:owner/repo@v1.2.0 --yes -- --check
+
+gitx exec prettier@3.6.2 -- --check README.md
+gitx exec --package @angular/cli@20.0.0 --bin ng -- new app</code></pre>
+      <p><code>run</code> is for a Git repository that contains a schema-1 <code>gitx.toml</code>. GitX resolves a remote ref to a commit before running it. <code>exec</code> is for npm package binaries. It resolves the exact package version and checks registry metadata before it delegates to npm, Bun, or pnpm.</p>
+      <details>
+        <summary>All <code>inspect</code> options</summary>
+        <table><tbody>
+          <tr><td><code>SOURCE</code></td><td>Required local directory, GitX-style Git source, generic Git URL, or npm package spec.</td></tr>
+          <tr><td><code>--format text|json</code></td><td>Human-readable output or machine-readable inspection data. Text is the default.</td></tr>
+        </tbody></table>
+      </details>
+      <details>
+        <summary>All <code>run</code> options</summary>
+        <table><tbody>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>Skip confirmation.</td></tr>
+          <tr><td><code>-n</code>, <code>--preview</code></td><td>Show the preflight and stop before execution.</td></tr>
+          <tr><td><code>-- ARGS...</code></td><td>Forward the remaining arguments to the manifest entrypoint.</td></tr>
+        </tbody></table>
+      </details>
+      <details>
+        <summary>All <code>exec</code> options</summary>
+        <table><tbody>
+          <tr><td><code>TARGET</code></td><td>A package spec, or a binary name when <code>--package</code> is present.</td></tr>
+          <tr><td><code>-p</code>, <code>--package PACKAGE</code></td><td>Repeatable package to make available to the command.</td></tr>
+          <tr><td><code>--bin BIN</code></td><td>Explicit binary. It requires one or more <code>--package</code> values.</td></tr>
+          <tr><td><code>--backend auto|bun|npm|pnpm</code></td><td>Select the package manager after preflight. <code>auto</code> is the default.</td></tr>
+          <tr><td><code>-y</code>, <code>--yes</code></td><td>Skip confirmation.</td></tr>
+          <tr><td><code>--allow-scripts</code></td><td>Allow install lifecycle scripts in the delegated backend.</td></tr>
+          <tr><td><code>--allow-dangerous-scripts</code></td><td>Acknowledge a deny-level lifecycle finding. It requires <code>--allow-scripts</code>.</td></tr>
+          <tr><td><code>-n</code>, <code>--preview</code></td><td>Show the resolution and preflight without execution.</td></tr>
+          <tr><td><code>-- ARGS...</code></td><td>Forward the rest to the package binary.</td></tr>
+        </tbody></table>
+      </details>
+      <p>GitX checks integrity metadata, install lifecycle scripts, suspicious script patterns, large dependency counts, and native-looking package names. It is not a sandbox and it does not yet scan extracted files or the full dependency tree.</p>
+    </section>
+
+    <section>
+      <h2>Install, update, and remove</h2>
+      <pre><code>gitx install prettier@3.6.2
+gitx install github:owner/repo@v1.0.0 --as repo-tool
+gitx list
+gitx update prettier --check
+gitx update prettier
+gitx remove prettier</code></pre>
+      <p><code>install</code> creates a GitX-managed shim pinned to an npm version or Git commit. <code>update --check</code> resolves again and shows the exact diff without writing. An actual update compares the pin, integrity, description, homepage, license, entry point, binary names, platform rules, runtime requirements, and manifest metadata.</p>
+      <p>Records live in <code>~/.gitx/installed</code> and shims in <code>~/.gitx/bin</code>, unless <code>GITX_HOME</code> changes that location.</p>
+      <details>
+        <summary>All persistent-install commands</summary>
+        <table><tbody>
+          <tr><td><code>gitx install SOURCE</code></td><td>Create a managed shim for the source.</td></tr>
+          <tr><td><code>install --as NAME</code></td><td>Name the shim instead of using the inferred binary or tool name.</td></tr>
+          <tr><td><code>gitx update TOOL</code></td><td>Resolve the original source, show the diff, and write an update if needed.</td></tr>
+          <tr><td><code>update --check</code></td><td>Show the same diff without changing the record or shim.</td></tr>
+          <tr><td><code>gitx list</code></td><td>List managed shims.</td></tr>
+          <tr><td><code>gitx remove TOOL</code></td><td>Remove one managed shim and its record.</td></tr>
+        </tbody></table>
+      </details>
+    </section>
+
+    <section>
+      <h2>Cache and completions</h2>
+      <pre><code>gitx cache list
+gitx cache import cowsay@1.6.0 --from npm
+gitx cache remove cowsay
+gitx cache clear
+
+gitx completion bash &gt; ~/.local/share/bash-completion/completions/gitx
+gitx completion zsh &gt; ~/.zfunc/_gitx</code></pre>
+      <p><code>cache clear</code> clears GitX's local cache only. It does not wipe normal npm, Bun, or pnpm caches. Set <code>GITX_CACHE_DIR</code> to choose the GitX cache location. Without it, GitX uses <code>$XDG_CACHE_HOME/gitx</code> or <code>~/.cache/gitx</code>.</p>
+      <p>Pnpm delegated runs now keep both its <code>dlx</code> cache and store below the GitX cache. Bun can still satisfy a package from its shared global cache, so call a Bun cache test warm unless you use a clean user or container.</p>
+      <details>
+        <summary>All cache, doctor, and completion commands</summary>
+        <table><tbody>
+          <tr><td><code>gitx cache list</code></td><td>List GitX-owned cached artifacts.</td></tr>
+          <tr><td><code>gitx cache clear</code></td><td>Clear the GitX local cache only.</td></tr>
+          <tr><td><code>gitx cache remove KEY</code></td><td>Remove one GitX cache record, package, commit, or tool key.</td></tr>
+          <tr><td><code>gitx cache import PACKAGE</code></td><td>Import a verified package artifact from another local cache.</td></tr>
+          <tr><td><code>cache import --from auto|all|npm|pnpm|bun</code></td><td>Choose which existing cache to read. <code>auto</code> tries npm first. <code>all</code> checks npm, Bun, and pnpm.</td></tr>
+          <tr><td><code>gitx doctor</code></td><td>Report the supported runtimes available on <code>PATH</code>.</td></tr>
+          <tr><td><code>gitx completion SHELL</code></td><td>Write a completion script to standard output for <code>bash</code>, <code>elvish</code>, <code>fish</code>, <code>powershell</code>, or <code>zsh</code>.</td></tr>
+        </tbody></table>
+      </details>
+    </section>
+
+    <section>
+      <h2>What the timing run found</h2>
+      <p>These are three-run means on Ubuntu 24.04.4. They are a snapshot, not a universal benchmark.</p>
+      <table>
+        <thead><tr><th>Task</th><th>GitX</th><th>Native or raw</th><th>Read</th></tr></thead>
+        <tbody>
+          <tr><td>APT catalog search</td><td>0.377 s</td><td>0.343 s</td><td>GitX adds 0.034 s.</td></tr>
+          <tr><td>npm registry search</td><td>0.297 s</td><td>0.277 s</td><td>Very close after the cold request.</td></tr>
+          <tr><td>GitHub repository search</td><td>0.213 s</td><td>0.077 s</td><td>Card parsing and normalization cost time.</td></tr>
+          <tr><td>Codeberg repository search</td><td>3.757 s</td><td>3.690 s</td><td>The remote server owns almost all of the wait.</td></tr>
+          <tr><td>npm package run, cold</td><td>1.533 s</td><td>1.370 s</td><td>GitX adds 0.163 s.</td></tr>
+          <tr><td>pnpm package run, cold</td><td>1.497 s</td><td>1.330 s</td><td>GitX adds 0.167 s.</td></tr>
+        </tbody>
+      </table>
+      <p>The honest answer is simple. GitX loses a little time to direct provider calls. That is where it cannot beat the originals. Its value is the common interface and the information around the command, not raw single-command speed.</p>
+    </section>
+
+    <section>
+      <h2>Current limits</h2>
+      <p>GitX is good for internal development and testing. It is not a security sandbox. Manifest permissions only inform the preflight. It still needs direct execution from verified GitX-owned package artifacts, full package file scanning, configured private-registry execution, semver range resolution, Windows-native shims, and a clean-environment Bun cold-cache test.</p>
+    </section>
+
+    <footer>
+      <p>Run <code>gitx &lt;command&gt; --help</code> for the built-in reference. This page covers GitX 0.3.0.</p>
+    </footer>
+  </main>
+</body>
+</html>

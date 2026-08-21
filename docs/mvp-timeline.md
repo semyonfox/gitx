@@ -1,111 +1,31 @@
-# MVP Timeline
+# Archived MVP Timeline
 
-This is scoped as a 6-week build, assuming part-time but consistent work. The goal is a credible CLI demo, not a complete ecosystem.
+> Historical planning record. This was the repository's original six-week proposal, not a current schedule or status page. Use the [current roadmap](phase-1-roadmap.md) for active work.
 
-## Week 1 - Shape The CLI
+## Original Assumption
 
-Goals:
+The project was scoped as a part-time, six-week build aimed at a credible CLI demo rather than a complete ecosystem. The implementation language was still undecided, and package-runner compatibility was not yet part of the weekly plan.
 
-- Pick implementation stack.
-- Define command syntax.
-- Define `gitx.toml` manifest v0.
-- Build argument parsing.
-- Resolve local paths and GitHub shorthand syntax.
+## Proposed Sequence
 
-Deliverables:
+| Week | Theme | Intended outcome |
+| --- | --- | --- |
+| 1 | Shape the CLI | Choose the stack; define commands and `gitx.toml`; parse local paths and GitHub shorthand; provide help, inspect scaffolding, and a fixture. |
+| 2 | Resolve and fetch repositories | Resolve Git refs to commits, create temporary workspaces, cache by commit, and expose cache listing. |
+| 3 | Execute manifests | Run one supported runtime, forward arguments, prompt on first use, and reuse cached content. |
+| 4 | Summarize risk | Warn about mutable refs, missing manifests, suspicious entrypoints, permissions, and requested environment variables; add `--yes` and agent JSON. |
+| 5 | Support private repos and agents | Reuse existing Git authentication, stabilize machine-readable output, smoke-test a private source, and document agent safety. |
+| 6 | Polish the demo | Improve docs, provide a small example tool and repeatable demo, then decide the next product direction. |
 
-- `gitx --help`.
-- `gitx inspect <source>` stub.
-- Manifest parser.
-- Example repo fixture.
+## Why It Was Archived
 
-Recommended stack:
+The worktree now uses Rust and includes functionality that the proposal did not schedule, including npm-style execution, artifact/cache work, scanning, multi-source search, explicit installed-tool updates, and persistent shims. The original week-by-week ordering therefore no longer describes the implementation or predicts delivery.
 
-- Rust if prioritizing single-binary distribution and systems credibility.
-- TypeScript/Bun if prioritizing speed of iteration and dogfooding the JS/NPX pain point.
+The proposal is kept only to preserve the project's planning history. It must not be used to infer which features are complete.
 
-## Week 2 - Repo Resolution And Fetching
+## Current Sources Of Truth
 
-Goals:
-
-- Resolve `github:owner/repo@ref`.
-- Resolve full Git URLs.
-- Convert branches/tags to commit hashes.
-- Create temp workspaces.
-- Cache by commit hash.
-
-Deliverables:
-
-- `gitx inspect github:owner/repo@main` prints resolved commit.
-- `gitx cache list` shows cached refs.
-- Basic sparse or shallow clone support.
-
-## Week 3 - Manifest Execution
-
-Goals:
-
-- Execute manifest entrypoints.
-- Forward command arguments.
-- Support at least one runtime well.
-- Add first-run prompt.
-
-Deliverables:
-
-- `gitx run github:owner/repo@ref -- arg1 arg2` works.
-- Clear errors for missing manifests and unsupported runtimes.
-- Cache reuse works across repeated runs.
-
-## Week 4 - Risk Summary
-
-Goals:
-
-- Make the inspect output useful.
-- Add warnings for mutable refs, missing pins, huge repos, missing manifests, and suspicious entrypoints.
-- Show requested permissions and env vars.
-
-Deliverables:
-
-- Human-readable risk card before run.
-- `--yes` flag for explicit non-interactive execution.
-- `--json` output for agents.
-
-## Week 5 - Private Repos And Agent UX
-
-Goals:
-
-- Work with existing SSH Git auth.
-- Support HTTPS remotes where possible.
-- Make output stable enough for agents to parse.
-- Add docs for agent usage.
-
-Deliverables:
-
-- Private repo smoke test.
-- `gitx inspect --json` schema.
-- Agent safety notes.
-
-## Week 6 - Demo Polish
-
-Goals:
-
-- Improve docs.
-- Add example tools.
-- Record a clear demo path.
-- Decide whether to continue into sandboxing, registry, or VCS features.
-
-Deliverables:
-
-- README demo.
-- Small example GitX-compatible repo.
-- Roadmap for v0.2.
-
-## Post-MVP Directions
-
-- Stronger sandboxing.
-- Signed manifests and signed refs.
-- Trust policies per user/team.
-- Registry index for discoverability.
-- GitHub App for install/risk summaries.
-- Workspace sync integration.
-- Private team tool catalogs.
-- Deeper source-control experiments.
+- [README](../README.md) for commands that exist in the worktree.
+- [Current Roadmap](phase-1-roadmap.md) for ordered implementation work and exit criteria.
+- [Product Scope](product-scope.md) for the product boundary.
+- [Deferred Idea Bank](idea-bank.md) for unscheduled directions that once appeared under “post-MVP.”
