@@ -1,0 +1,4 @@
+schema = 1
+name = "minimal"
+runtime = "node"
+entry = "index.js"

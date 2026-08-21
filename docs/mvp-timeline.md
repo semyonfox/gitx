@@ -19,7 +19,7 @@ The project was scoped as a part-time, six-week build aimed at a credible CLI de
 
 ## Why It Was Archived
 
-The worktree now uses Rust and includes functionality that the proposal did not schedule, including npm-style execution, compatibility aliases, artifact/cache work, scanning, and persistent shims. The original week-by-week ordering therefore no longer describes the implementation or predicts delivery.
+The worktree now uses Rust and includes functionality that the proposal did not schedule, including npm-style execution, artifact/cache work, scanning, multi-source search, explicit installed-tool updates, and persistent shims. The original week-by-week ordering therefore no longer describes the implementation or predicts delivery.
 
 The proposal is kept only to preserve the project's planning history. It must not be used to infer which features are complete.
 

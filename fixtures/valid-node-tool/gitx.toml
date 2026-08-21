@@ -1,0 +1,16 @@
+schema = 1
+name = "repo-audit"
+description = "Example GitX-compatible repo tool."
+runtime = "node"
+entry = "src/main.js"
+
+[permissions]
+network = true
+read = ["."]
+write = ["./reports"]
+env = ["GITHUB_TOKEN"]
+subprocess = false
+
+[metadata]
+homepage = "https://github.com/example/repo-audit"
+license = "MIT"

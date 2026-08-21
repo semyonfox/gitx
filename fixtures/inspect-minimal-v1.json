@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "source": "./fixtures/minimal-tool",
+  "sourceType": "local",
+  "resolvedRemote": null,
+  "requestedRef": null,
+  "resolvedCommit": null,
+  "package": null,
+  "packageVersion": null,
+  "manifestPath": "./fixtures/minimal-tool/gitx.toml",
+  "manifestFound": true,
+  "toolName": "minimal",
+  "entrypoint": "index.js",
+  "runtime": "node",
+  "permissions": {
+    "network": false,
+    "read": [],
+    "write": [],
+    "env": [],
+    "subprocess": false
+  },
+  "permissionEnforcement": "none",
+  "warnings": [],
+  "riskLevel": "low",
+  "policyDecision": "allow",
+  "requiresConfirmation": false
+}

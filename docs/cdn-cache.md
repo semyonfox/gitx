@@ -23,8 +23,9 @@ GitX creates this layout:
 
 ```text
 <cache>/
-  git/snapshots/<sanitized-remote>/<full-commit>/
-  git/snapshots/<sanitized-remote>/<full-commit>.complete
+  .gitx-cache-v1
+  git/snapshots/<sha256-remote>/<full-commit>/
+  git/snapshots/<sha256-remote>/<full-commit>.complete
   npm/metadata/<package>.json
   npm/tags/<package>.json
   npm/versions/<package>/<version>.json
@@ -34,14 +35,14 @@ GitX creates this layout:
 
 | Area | Key | Current consumer |
 | --- | --- | --- |
-| Git snapshot | Sanitized remote-derived key plus full commit hash | `inspect`, `run`, and Git installs |
+| Git snapshot | SHA-256 remote key plus full commit hash | `inspect`, `run`, and Git installs |
 | npm raw metadata | Package name | Dist-tag and non-exact resolution |
 | npm tag record | Package name, containing tag-to-version pointers | Detecting and reporting tag movement |
 | npm version record | Package name plus exact version | Exact package inspection and execution preflight |
 | npm tarball | SHA-512 integrity digest | `cache import` and artifact library functions only |
 | Backend cache | Backend-defined | Delegated npm, bunx, and pnpm execution |
 
-The tarball and backend caches are separate. `gitx x` does not extract or run
+The tarball and backend caches are separate. `gitx exec` does not extract or run
 from `npm/tarballs`; the selected package manager still materializes the
 dependency graph in its own format.
 
@@ -96,16 +97,17 @@ identity and verification design.
 SHA-512 SRI value, it:
 
 1. reuses and verifies an existing digest-keyed tarball;
-2. otherwise streams a download to a PID-scoped partial file;
+2. otherwise streams a download to a uniquely named temporary file;
 3. verifies the complete partial file; and
-4. renames the verified file into the tarball store.
+4. persists it without overwriting a concurrent winner, which is independently
+   verified before reuse.
 
 No CLI command calls this function yet. There is no `gitx cache fetch`, origin
 read-through, or CDN read-through path.
 
 ### Git snapshots
 
-Git snapshots are grouped by sanitized remote identity and full commit hash. A
+Git snapshots are grouped by SHA-256 remote identity and full commit hash. A
 snapshot counts as complete only when its directory and adjacent `.complete`
 record both exist. Fetch work happens in a temporary directory and is renamed
 into place after checkout and commit verification.
@@ -127,7 +129,11 @@ gitx cache clear
 entries, and completed Git snapshots. `remove` can remove package metadata and
 version records, a remote's Git snapshots, or snapshots matching a commit
 prefix. It does not map a package name back to and remove digest-keyed tarballs.
-`clear` deletes the entire selected cache root.
+`clear` deletes the entire selected cache root, but refuses filesystem roots,
+the user's home directory, the current directory, ancestors of the current
+directory, symlink roots, and directories without the GitX cache marker.
+Regular cache initialization also refuses to claim a non-empty directory that
+does not already look like a GitX cache.
 
 ## Current guarantees and limits
 
@@ -136,16 +142,15 @@ Implemented guarantees:
 - npm tarball import accepts SHA-512 SRI only and verifies the complete file;
 - verified tarballs use digest-derived names;
 - imports leave package-manager caches untouched;
-- incomplete Git fetch directories are not treated as snapshots;
+- incomplete or malformed Git snapshots are not treated as cache hits and are
+  replaced after a verified refetch;
 - named Git ref fallback detects movement between resolution and fetch; and
-- Git commit directories are namespaced by a remote-derived cache key.
+- Git commit directories are namespaced by a collision-resistant SHA-256 remote key.
 
 Not guaranteed:
 
 - cache files are not made read-only;
-- sanitized remote cache keys are not cryptographic identities and may, in
-  principle, collide;
-- `gitx x` does not consume or scan verified tarballs;
+- `gitx exec` does not consume or scan verified tarballs;
 - registry metadata is not signed or pinned locally;
 - there is no cache quota, garbage collection, access-time policy, or
   cross-process locking protocol;
