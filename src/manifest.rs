@@ -290,7 +290,10 @@ mod tests {
         let entry = temp.path().join("index.js");
         fs::write(&entry, "console.log('ok');\n").unwrap();
 
-        assert_eq!(resolve_entry(temp.path(), "index.js").unwrap(), entry);
+        assert_eq!(
+            resolve_entry(temp.path(), "index.js").unwrap(),
+            entry.canonicalize().unwrap()
+        );
         assert!(resolve_entry(temp.path(), "../index.js").is_err());
     }
 
