@@ -1367,6 +1367,7 @@ fn update_all_check_reports_would_update_without_writing() {
     assert_eq!(std::fs::read(&record_path).unwrap(), before);
 }
 
+#[cfg(unix)]
 #[test]
 fn update_all_without_installed_tools_prints_no_tools_installed() {
     let home = tempfile::tempdir().unwrap();
