@@ -1248,11 +1248,9 @@ fn update_replaces_the_pin_and_preserves_the_installed_name() {
     .unwrap();
     assert_eq!(record["name"], "demo-tool");
     assert_eq!(record["pinned"], "npm:demo@1.2.3");
-    assert!(
-        std::fs::read_to_string(home.path().join("bin/demo-tool"))
-            .unwrap()
-            .contains("gitx exec 'demo@1.2.3' --yes")
-    );
+    assert!(std::fs::read_to_string(home.path().join("bin/demo-tool"))
+        .unwrap()
+        .contains("gitx exec 'demo@1.2.3' --yes"));
 }
 
 #[cfg(unix)]
@@ -1367,6 +1365,7 @@ fn update_all_check_reports_would_update_without_writing() {
     assert_eq!(std::fs::read(&record_path).unwrap(), before);
 }
 
+#[cfg(unix)]
 #[test]
 fn update_all_without_installed_tools_prints_no_tools_installed() {
     let home = tempfile::tempdir().unwrap();
