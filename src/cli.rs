@@ -89,7 +89,7 @@ enum Command {
 
     /// Re-resolve an installed tool and show its exact update diff.
     #[command(
-        after_help = "Examples:\n  gitx update prettier\n  gitx update repo-tool --check\n\n`--check` resolves and compares without writing the install record or shim."
+        after_help = "Examples:\n  gitx update prettier\n  gitx update repo-tool --check\n  gitx update --all\n  gitx update --all --check\n\n`--check` resolves and compares without writing the install record or shim. `--all` re-resolves every installed tool and continues past individual failures."
     )]
     Update(UpdateCommand),
 
@@ -301,7 +301,12 @@ struct InstallCommand {
 #[derive(Debug, Args)]
 struct UpdateCommand {
     /// Name of the installed tool to update.
-    tool: String,
+    #[arg(required_unless_present = "all", group = "target")]
+    tool: Option<String>,
+
+    /// Update every installed tool, continuing past individual failures.
+    #[arg(long, group = "target")]
+    all: bool,
 
     /// Resolve and show the update diff without changing the installed tool.
     #[arg(long)]
@@ -486,8 +491,17 @@ fn execute(cli: Cli) -> Result<Option<String>> {
             install::install(&command.source, command.name.as_deref()).map(Some)
         }
         Command::Update(command) => {
-            report::step(format!("Resolving update for {}", command.tool));
-            install::update(&command.tool, command.check).map(Some)
+            if command.all {
+                report::step("Resolving updates for every installed tool");
+                install::update_all(command.check).map(|_| None)
+            } else {
+                let tool = command
+                    .tool
+                    .as_deref()
+                    .expect("clap enforces tool or --all");
+                report::step(format!("Resolving update for {tool}"));
+                install::update(tool, command.check).map(Some)
+            }
         }
         Command::List => {
             report::step("Reading managed installs");

@@ -290,6 +290,30 @@ pub fn install(input: &str, name_override: Option<&str>) -> Result<String> {
 /// Re-resolve the source originally used for an installed tool and replace its
 /// immutable pin only when the resolved identity changed.
 pub fn update(name: &str, check: bool) -> Result<String> {
+    let outcome = update_one(name, check)?;
+    Ok(render_update_detail(&outcome, check))
+}
+
+#[derive(Debug, Clone)]
+struct UpdateOutcome {
+    name: String,
+    source: String,
+    current_pin: String,
+    resolved_pin: String,
+    changes: Vec<UpdateChange>,
+    pin_changed: bool,
+    notes: Vec<String>,
+}
+
+impl UpdateOutcome {
+    fn changed(&self) -> bool {
+        !self.changes.is_empty()
+    }
+}
+
+/// Resolve the latest identity for one installed tool; unless `check` is set,
+/// apply any resulting pin or metadata change.
+fn update_one(name: &str, check: bool) -> Result<UpdateOutcome> {
     if !cfg!(unix) {
         return Err(GitxError::Message(
             "managed install shims are currently supported only on Unix-like systems".to_string(),
@@ -339,23 +363,47 @@ pub fn update(name: &str, check: bool) -> Result<String> {
     // that originally used `--as`.
     next.name = previous.name.clone();
     next.source = previous.source.clone();
-    let changes = record_changes(&previous, &next);
-    let changed = !changes.is_empty();
-    let pin_changed = previous.pinned != next.pinned;
+    let outcome = UpdateOutcome {
+        name: name.to_string(),
+        source: previous.source.clone(),
+        current_pin: previous.pinned.clone(),
+        resolved_pin: next.pinned.clone(),
+        pin_changed: previous.pinned != next.pinned,
+        changes: record_changes(&previous, &next),
+        notes,
+    };
 
-    let mut output = vec![format!("Update {}", terminal_safe(name))];
-    output.push(format!("Source: {}", terminal_safe(&previous.source)));
-    output.push(format!("Current: {}", terminal_safe(&previous.pinned)));
-    output.push(format!("Resolved: {}", terminal_safe(&next.pinned)));
-    if changed {
-        output.push("Changes:".to_string());
-        output.extend(changes.iter().map(UpdateChange::render));
+    if check || !outcome.changed() {
+        return Ok(outcome);
     }
-    output.extend(notes.into_iter().map(|note| format!("Note: {note}")));
+
+    if outcome.pin_changed {
+        report::step("Writing the new immutable pin and shim");
+        replace_record_and_shim(&paths, &next, &previous_record_body)?;
+    } else {
+        report::step("Refreshing managed install metadata");
+        replace_record(&paths, &next)?;
+    }
+    Ok(outcome)
+}
+
+fn render_update_detail(outcome: &UpdateOutcome, check: bool) -> String {
+    let mut output = vec![format!("Update {}", terminal_safe(&outcome.name))];
+    output.push(format!("Source: {}", terminal_safe(&outcome.source)));
+    output.push(format!("Current: {}", terminal_safe(&outcome.current_pin)));
+    output.push(format!(
+        "Resolved: {}",
+        terminal_safe(&outcome.resolved_pin)
+    ));
+    if outcome.changed() {
+        output.push("Changes:".to_string());
+        output.extend(outcome.changes.iter().map(UpdateChange::render));
+    }
+    output.extend(outcome.notes.iter().map(|note| format!("Note: {note}")));
 
     if check {
-        output.push(if changed {
-            if pin_changed {
+        output.push(if outcome.changed() {
+            if outcome.pin_changed {
                 "Action: would replace the pinned target and record the shown metadata".to_string()
             } else {
                 "Action: would refresh the recorded metadata; the pinned target is unchanged"
@@ -364,24 +412,101 @@ pub fn update(name: &str, check: bool) -> Result<String> {
         } else {
             "Action: no change; the current pin is already up to date".to_string()
         });
-        return Ok(output.join("\n"));
+        return output.join("\n");
     }
 
-    if !changed {
+    if !outcome.changed() {
         output.push("No update needed.".to_string());
-        return Ok(output.join("\n"));
+        return output.join("\n");
     }
 
-    if pin_changed {
-        report::step("Writing the new immutable pin and shim");
-        replace_record_and_shim(&paths, &next, &previous_record_body)?;
-        output.push(format!("Updated pin: {}", terminal_safe(&next.pinned)));
+    if outcome.pin_changed {
+        output.push(format!(
+            "Updated pin: {}",
+            terminal_safe(&outcome.resolved_pin)
+        ));
     } else {
-        report::step("Refreshing managed install metadata");
-        replace_record(&paths, &next)?;
         output.push("Updated metadata.".to_string());
     }
-    Ok(output.join("\n"))
+    output.join("\n")
+}
+
+/// Re-resolve every installed tool and refresh each pin whose resolved identity
+/// changed. Per-tool failures are collected and reported in a summary; the run
+/// fails after reporting when any tool could not be updated.
+pub fn update_all(check: bool) -> Result<()> {
+    if !cfg!(unix) {
+        return Err(GitxError::Message(
+            "managed install shims are currently supported only on Unix-like systems".to_string(),
+        ));
+    }
+
+    let paths = InstallPaths::discover();
+    paths.validate_root()?;
+    if !paths.home.exists() {
+        println!("No tools installed.");
+        return Ok(());
+    }
+    paths.validate_managed_dirs()?;
+
+    let mut names: Vec<String> = read_records(&paths)?
+        .into_iter()
+        .map(|record| record.name)
+        .collect();
+    names.sort();
+
+    if names.is_empty() {
+        println!("No tools installed.");
+        return Ok(());
+    }
+
+    let mut updated = 0_usize;
+    let mut failed = 0_usize;
+    for name in &names {
+        match update_one(name, check) {
+            Ok(outcome) => {
+                if !outcome.changed() {
+                    println!("{}: up to date", terminal_safe(name));
+                } else if check {
+                    println!(
+                        "{}: would update {} -> {}",
+                        terminal_safe(name),
+                        terminal_safe(&outcome.current_pin),
+                        terminal_safe(&outcome.resolved_pin)
+                    );
+                } else {
+                    updated += 1;
+                    println!(
+                        "{}: updated {} -> {}",
+                        terminal_safe(name),
+                        terminal_safe(&outcome.current_pin),
+                        terminal_safe(&outcome.resolved_pin)
+                    );
+                }
+            }
+            Err(error) => {
+                failed += 1;
+                println!(
+                    "{}: failed: {}",
+                    terminal_safe(name),
+                    crate::render_error(&error)
+                );
+            }
+        }
+    }
+
+    println!(
+        "Summary: {} checked, {updated} updated, {failed} failed",
+        names.len()
+    );
+
+    if failed > 0 {
+        return Err(GitxError::ToolExit {
+            command: "gitx update --all".to_string(),
+            code: 1,
+        });
+    }
+    Ok(())
 }
 
 /// Find installed commands by name, pin, or source kind without touching the

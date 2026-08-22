@@ -99,13 +99,18 @@ struct PackageMetadata {
 struct PackageVersion {
     name: String,
     version: String,
+    #[serde(default, deserialize_with = "lenient_string")]
     description: Option<String>,
     homepage: Option<serde_json::Value>,
     license: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "lenient_bin")]
     bin: Option<BinField>,
+    #[serde(default, deserialize_with = "lenient_string_list")]
     os: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "lenient_string_list")]
     cpu: Option<Vec<String>>,
-    engines: Option<BTreeMap<String, String>>,
+    engines: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(default, deserialize_with = "lenient_string_list")]
     keywords: Option<Vec<String>>,
     scripts: Option<HashMap<String, String>>,
     dependencies: Option<HashMap<String, String>>,
@@ -132,6 +137,57 @@ struct PackageDist {
 enum BinField {
     Path(String),
     Map(BTreeMap<String, String>),
+}
+
+/// Registry metadata is author-controlled, so any field can arrive with an
+/// unexpected JSON type. Decode the shapes npm documents and treat everything
+/// else as absent instead of failing the whole packument.
+fn lenient_string<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::String(text)) => Some(text),
+        _ => None,
+    })
+}
+
+fn lenient_string_list<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::String(text)) => Some(vec![text]),
+        Some(serde_json::Value::Array(items)) => Some(
+            items
+                .into_iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect(),
+        ),
+        _ => None,
+    })
+}
+
+fn lenient_bin<'de, D>(deserializer: D) -> std::result::Result<Option<BinField>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::String(path)) => Some(BinField::Path(path)),
+        Some(serde_json::Value::Object(entries)) => Some(BinField::Map(
+            entries
+                .into_iter()
+                .filter_map(|(name, path)| path.as_str().map(|path| (name, path.to_string())))
+                .collect(),
+        )),
+        // `bin: false` / `null` legitimately mean "this package has no bins"
+        _ => None,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -1049,7 +1105,13 @@ fn engine_requirements(version: &PackageVersion) -> Vec<String> {
         .map(|engines| {
             engines
                 .iter()
-                .map(|(runtime, requirement)| format!("{runtime} {requirement}"))
+                // structured entries like ccusage's `runtime` array are
+                // backend-specific metadata, not a plain requirement string
+                .filter_map(|(runtime, requirement)| {
+                    requirement
+                        .as_str()
+                        .map(|value| format!("{runtime} {value}"))
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -1598,6 +1660,118 @@ mod tests {
         assert!(parse_package_spec("--help@1.0.0").is_err());
         assert!(validate_command_name("--help").is_err());
         assert!(validate_command_name("demo").is_ok());
+    }
+
+    #[test]
+    fn decodes_adversarial_metadata_shapes_without_failing() {
+        let body = r#"{
+            "dist-tags": { "latest": "1.0.0" },
+            "versions": {
+                "1.0.0": {
+                    "name": "weird",
+                    "version": "1.0.0",
+                    "description": 42,
+                    "homepage": null,
+                    "license": null,
+                    "bin": false,
+                    "os": "linux",
+                    "cpu": ["x64", 7],
+                    "engines": null,
+                    "keywords": "one, two",
+                    "scripts": null,
+                    "dependencies": null,
+                    "optionalDependencies": null,
+                    "peerDependencies": null,
+                    "dist": {
+                        "tarball": "https://example.com/weird-1.0.0.tgz",
+                        "integrity": null,
+                        "shasum": null,
+                        "fileCount": null,
+                        "unpackedSize": null
+                    }
+                },
+                "2.0.0": {
+                    "name": "weird",
+                    "version": "2.0.0",
+                    "description": "fine",
+                    "bin": null,
+                    "os": null,
+                    "cpu": null,
+                    "engines": {"node": ">=18"},
+                    "keywords": ["ok", true],
+                    "scripts": null,
+                    "dependencies": null,
+                    "optionalDependencies": null,
+                    "peerDependencies": null,
+                    "dist": {
+                        "tarball": "https://example.com/weird-2.0.0.tgz",
+                        "integrity": null,
+                        "shasum": null,
+                        "fileCount": null,
+                        "unpackedSize": null
+                    }
+                }
+            }
+        }"#;
+
+        let metadata: super::PackageMetadata = serde_json::from_str(body).unwrap();
+        let removed_bin = metadata.versions.get("1.0.0").unwrap();
+        // `bin: false` means "no binaries", not "undecodable metadata"
+        assert!(super::bin_names(removed_bin).is_empty());
+        // a bare-string `os` still expresses a constraint; junk array entries
+        // are dropped while valid ones are kept
+        assert_eq!(
+            super::platform_constraints(removed_bin),
+            vec!["OS: linux".to_string(), "CPU: x64".to_string()]
+        );
+        let normal = metadata.versions.get("2.0.0").unwrap();
+        assert_eq!(super::engine_requirements(normal), vec!["node >=18"]);
+    }
+
+    #[test]
+    fn decodes_metadata_with_non_string_engine_values() {
+        // ccusage-style metadata publishes a structured `runtime` entry inside
+        // `engines`; decoding must not fail on it.
+        let body = r#"{
+            "dist-tags": { "latest": "18.0.6" },
+            "versions": {
+                "18.0.6": {
+                    "name": "ccusage",
+                    "version": "18.0.6",
+                    "description": "usage tool",
+                    "homepage": null,
+                    "license": "MIT",
+                    "bin": { "ccusage": "dist/index.js" },
+                    "os": null,
+                    "cpu": null,
+                    "engines": {
+                        "node": ">=20.19.4",
+                        "runtime": [
+                            { "name": "node", "onFail": "download", "version": "^24.11.0" }
+                        ]
+                    },
+                    "keywords": null,
+                    "scripts": null,
+                    "dependencies": null,
+                    "optionalDependencies": null,
+                    "peerDependencies": null,
+                    "dist": {
+                        "tarball": "https://example.com/ccusage-18.0.6.tgz",
+                        "integrity": "sha512-abc",
+                        "shasum": "abc",
+                        "fileCount": 10,
+                        "unpackedSize": 1024
+                    }
+                }
+            }
+        }"#;
+
+        let metadata: super::PackageMetadata = serde_json::from_str(body).unwrap();
+        let version = metadata.versions.get("18.0.6").unwrap();
+        assert_eq!(
+            super::engine_requirements(version),
+            vec!["node >=20.19.4".to_string()]
+        );
     }
 
     #[test]
