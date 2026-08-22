@@ -1248,9 +1248,11 @@ fn update_replaces_the_pin_and_preserves_the_installed_name() {
     .unwrap();
     assert_eq!(record["name"], "demo-tool");
     assert_eq!(record["pinned"], "npm:demo@1.2.3");
-    assert!(std::fs::read_to_string(home.path().join("bin/demo-tool"))
-        .unwrap()
-        .contains("gitx exec 'demo@1.2.3' --yes"));
+    assert!(
+        std::fs::read_to_string(home.path().join("bin/demo-tool"))
+            .unwrap()
+            .contains("gitx exec 'demo@1.2.3' --yes")
+    );
 }
 
 #[cfg(unix)]
