@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
@@ -224,7 +224,9 @@ pub fn search(mut request: SearchRequest) -> Result<String> {
         &mut notes,
     )?;
     candidates = deduplicate_candidates(candidates);
-    candidates.truncate(request.limit);
+    let query = request.query.trim().to_ascii_lowercase();
+    candidates = rank_candidates(candidates, &query);
+    candidates = diversify_candidates(candidates, request.limit);
 
     let response = SearchResponse {
         schema_version: SEARCH_SCHEMA_VERSION,
@@ -814,6 +816,64 @@ fn deduplicate_candidates(candidates: Vec<CatalogCandidate>) -> Vec<CatalogCandi
         .collect()
 }
 
+/// Exact name matches first, then prefix and word matches, then everything
+/// else. Stable, so each tier keeps the local-first collection order.
+fn rank_candidates(candidates: Vec<CatalogCandidate>, query: &str) -> Vec<CatalogCandidate> {
+    if query.is_empty() {
+        return candidates;
+    }
+
+    let mut ranked: Vec<_> = candidates
+        .into_iter()
+        .map(|candidate| (relevance(&candidate.name, query), candidate))
+        .collect();
+    ranked.sort_by_key(|(score, _)| *score);
+    ranked.into_iter().map(|(_, candidate)| candidate).collect()
+}
+
+fn relevance(name: &str, query: &str) -> u8 {
+    let name = name.to_ascii_lowercase();
+    if name == query {
+        0
+    } else if name.starts_with(query) {
+        1
+    } else if name
+        .split(['-', '_', '/', '@', '.'])
+        .any(|part| part == query)
+    {
+        2
+    } else {
+        3
+    }
+}
+
+/// Cap how many slots one source may take so a chatty catalog like the pacman
+/// sync cache cannot push every other source out of the result window. Leftover
+/// slots fall back to overflow results in ranked order.
+fn diversify_candidates(candidates: Vec<CatalogCandidate>, limit: usize) -> Vec<CatalogCandidate> {
+    let cap = limit.div_ceil(2).max(1);
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut selected = Vec::new();
+    let mut overflow = Vec::new();
+
+    for candidate in candidates {
+        let count = counts.entry(candidate.source.clone()).or_default();
+        if *count < cap && selected.len() < limit {
+            *count += 1;
+            selected.push(candidate);
+        } else {
+            overflow.push(candidate);
+        }
+    }
+    selected.extend(
+        overflow
+            .into_iter()
+            .take(limit.saturating_sub(selected.len())),
+    );
+
+    selected
+}
+
 fn recommended_index(candidates: &[CatalogCandidate], query: &str) -> usize {
     candidates
         .iter()
@@ -1009,6 +1069,55 @@ mod tests {
         ];
 
         assert_eq!(recommended_index(&candidates, "prettier"), 1);
+    }
+
+    #[test]
+    fn exact_name_wins_over_substring_matches_from_other_sources() {
+        let mut plugins = Vec::new();
+        for suffix in ["a52dec", "alsa", "qt"] {
+            let mut item = candidate(&format!("vlc-plugin-{suffix}"), "inspect");
+            item.source = "Arch installed package".to_string();
+            plugins.push(item);
+        }
+        let mut exact = candidate("vlc", "install pacman -S vlc");
+        exact.source = "Arch installed package".to_string();
+        plugins.push(exact);
+
+        let ranked = super::rank_candidates(plugins, "vlc");
+
+        assert_eq!(ranked[0].name, "vlc");
+    }
+
+    #[test]
+    fn one_source_cannot_fill_every_result_slot() {
+        let mut candidates = Vec::new();
+        for index in 0..10 {
+            let mut item = candidate(&format!("vlc-plugin-{index}"), "inspect");
+            item.source = "Arch installed package".to_string();
+            candidates.push(item);
+        }
+        let mut npm = candidate("vlc.js", "npm install vlc.js");
+        npm.source = "npm registry".to_string();
+        candidates.push(npm);
+
+        let results = super::diversify_candidates(candidates, 4);
+
+        assert_eq!(results.len(), 4);
+        assert!(results.iter().any(|item| item.source == "npm registry"));
+    }
+
+    #[test]
+    fn diversify_falls_back_to_overflow_when_only_one_source_has_results() {
+        let mut candidates = Vec::new();
+        for index in 0..6 {
+            let mut item = candidate(&format!("demo-{index}"), "inspect");
+            item.source = "only source".to_string();
+            candidates.push(item);
+        }
+
+        let results = super::diversify_candidates(candidates, 4);
+
+        assert_eq!(results.len(), 4);
     }
 
     #[test]

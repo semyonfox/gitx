@@ -1301,6 +1301,140 @@ fn update_missing_tool_fails_cleanly() {
 
 #[cfg(unix)]
 #[test]
+fn update_all_updates_stale_tools_and_reports_a_summary() {
+    let cache = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    seed_cached_package(cache.path(), "demo", "1.2.3", HELLO_INTEGRITY);
+    seed_installed_npm_tool(
+        home.path(),
+        "demo-stale",
+        "npm:demo@1.2.3",
+        "npm:demo@1.2.2",
+    );
+    seed_fully_resolved_npm_tool(home.path(), "demo-fresh", "npm:demo@1.2.3");
+    let mut command = Command::cargo_bin("gitx").unwrap();
+
+    command
+        .env("GITX_CACHE_DIR", cache.path())
+        .env("GITX_HOME", home.path())
+        .args(["update", "--all"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "demo-stale: updated npm:demo@1.2.2 -> npm:demo@1.2.3",
+        ))
+        .stdout(predicate::str::contains("demo-fresh: up to date"))
+        .stdout(predicate::str::contains(
+            "Summary: 2 checked, 1 updated, 0 failed",
+        ));
+
+    let record: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(home.path().join("installed/demo-stale.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(record["pinned"], "npm:demo@1.2.3");
+}
+
+#[cfg(unix)]
+#[test]
+fn update_all_check_reports_would_update_without_writing() {
+    let cache = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    seed_cached_package(cache.path(), "demo", "1.2.3", HELLO_INTEGRITY);
+    seed_installed_npm_tool(
+        home.path(),
+        "demo-stale",
+        "npm:demo@1.2.3",
+        "npm:demo@1.2.2",
+    );
+    let record_path = home.path().join("installed/demo-stale.json");
+    let before = std::fs::read(&record_path).unwrap();
+    let mut command = Command::cargo_bin("gitx").unwrap();
+
+    command
+        .env("GITX_CACHE_DIR", cache.path())
+        .env("GITX_HOME", home.path())
+        .args(["update", "--all", "--check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "demo-stale: would update npm:demo@1.2.2 -> npm:demo@1.2.3",
+        ))
+        .stdout(predicate::str::contains(
+            "Summary: 1 checked, 0 updated, 0 failed",
+        ));
+
+    assert_eq!(std::fs::read(&record_path).unwrap(), before);
+}
+
+#[test]
+fn update_all_without_installed_tools_prints_no_tools_installed() {
+    let home = tempfile::tempdir().unwrap();
+
+    Command::cargo_bin("gitx")
+        .unwrap()
+        .env("GITX_HOME", home.path())
+        .args(["update", "--all"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No tools installed."));
+}
+
+#[test]
+fn update_requires_either_a_tool_or_the_all_flag() {
+    Command::cargo_bin("gitx")
+        .unwrap()
+        .args(["update"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn update_rejects_combining_a_tool_with_the_all_flag() {
+    Command::cargo_bin("gitx")
+        .unwrap()
+        .args(["update", "demo-tool", "--all"])
+        .assert()
+        .failure();
+}
+
+#[cfg(unix)]
+#[test]
+fn update_all_continues_after_failures_and_exits_nonzero() {
+    let cache = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    seed_cached_package(cache.path(), "demo", "1.2.3", HELLO_INTEGRITY);
+    seed_installed_npm_tool(home.path(), "demo-good", "npm:demo@1.2.3", "npm:demo@1.2.2");
+    seed_installed_npm_tool(home.path(), "demo-broken", "npm:", "npm:x@0.0.0");
+    let mut command = Command::cargo_bin("gitx").unwrap();
+
+    command
+        .env("GITX_CACHE_DIR", cache.path())
+        .env("GITX_HOME", home.path())
+        .args(["update", "--all"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("demo-good: updated"))
+        .stdout(predicate::str::contains("demo-broken: failed:"))
+        .stdout(predicate::str::contains(
+            "Summary: 2 checked, 1 updated, 1 failed",
+        ));
+}
+
+#[cfg(unix)]
+fn seed_fully_resolved_npm_tool(home: &std::path::Path, name: &str, source: &str) {
+    seed_installed_npm_tool(home, name, source, source);
+    let record_path = home.join("installed").join(format!("{name}.json"));
+    let mut record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+    record["description"] = "hermetic CLI fixture".into();
+    record["entrypoint"] = "demo".into();
+    record["binaries"] = serde_json::json!(["demo"]);
+    std::fs::write(&record_path, serde_json::to_vec_pretty(&record).unwrap()).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn tool_exit_code_is_preserved() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(
