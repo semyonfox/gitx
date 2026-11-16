@@ -9,6 +9,7 @@ use serde::Deserialize;
 use crate::{
     catalog::{CatalogAction, CatalogCandidate, Compatibility},
     catalog_local::run_command,
+    catalog_providers::{GiteaInstance, gitea_candidates},
     display::shell_quote,
     error::{GitxError, Result},
 };
@@ -18,7 +19,8 @@ const CATALOG_FILE_LIMIT: u64 = 16 * 1024 * 1024;
 /// Query explicitly requested per-user catalog definitions. A file catalog is
 /// safe for device-only searches because GitX reads a local snapshot itself.
 /// A command catalog is deliberately excluded from `--offline` and `--device`:
-/// GitX cannot prove what an arbitrary child process will contact.
+/// GitX cannot prove what an arbitrary child process will contact. A Gitea
+/// catalog always queries its instance, so it is excluded too.
 pub fn search(
     requested_ids: &[String],
     query: &str,
@@ -35,15 +37,24 @@ pub fn search(
         if remaining == 0 {
             break;
         }
-        if local_only && catalog.kind == CatalogKind::Command {
+        if local_only && catalog.kind != CatalogKind::File {
             return Err(GitxError::Message(format!(
-                "configured catalog `{}` runs a command and cannot be used with --offline or --device; use a kind = \"file\" snapshot for a strict on-device search",
-                catalog.id
+                "configured catalog `{}` {} and cannot be used with --offline or --device; use a kind = \"file\" snapshot for a strict on-device search",
+                catalog.id,
+                if catalog.kind == CatalogKind::Command {
+                    "runs a command"
+                } else {
+                    "queries a Gitea instance"
+                }
             )));
         }
         let data = match catalog.kind {
             CatalogKind::File => read_catalog_file(catalog, &path)?,
             CatalogKind::Command => run_catalog_command(catalog, query)?,
+            CatalogKind::Gitea => {
+                candidates.extend(search_gitea_catalog(catalog, query, remaining)?);
+                continue;
+            }
         };
         candidates.extend(entries_to_candidates(
             catalog, &path, data, query, remaining,
@@ -92,6 +103,12 @@ struct CatalogDefinition {
     format: CatalogFormat,
     #[serde(default)]
     origin: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    /// names the variable holding a token, so the secret never lives in the config
+    #[serde(default)]
+    token_env: Option<String>,
+    #[serde(default)]
     action: Vec<String>,
 }
 
@@ -100,6 +117,7 @@ struct CatalogDefinition {
 enum CatalogKind {
     File,
     Command,
+    Gitea,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -170,6 +188,16 @@ fn validate_catalogs(catalogs: &[CatalogDefinition], config_path: &Path) -> Resu
                 config_path.display()
             )));
         }
+        if catalog.kind == CatalogKind::Gitea {
+            validate_gitea_catalog(catalog)?;
+            continue;
+        }
+        if catalog.url.is_some() || catalog.token_env.is_some() {
+            return Err(GitxError::Message(format!(
+                "configured catalog `{}` can set url and token_env only with kind = \"gitea\"",
+                catalog.id
+            )));
+        }
         if catalog.action.is_empty() || catalog.action.iter().any(|arg| invalid_value(arg)) {
             return Err(GitxError::Message(format!(
                 "configured catalog `{}` needs a non-empty action array without control characters",
@@ -213,6 +241,75 @@ fn validate_catalogs(catalogs: &[CatalogDefinition], config_path: &Path) -> Resu
         }
     }
     Ok(())
+}
+
+fn validate_gitea_catalog(catalog: &CatalogDefinition) -> Result<()> {
+    let valid_url = catalog.url.as_deref().is_some_and(|url| {
+        !invalid_value(url)
+            && url
+                .strip_prefix("https://")
+                .or_else(|| url.strip_prefix("http://"))
+                .is_some_and(|rest| !rest.is_empty() && !rest.contains(['?', '#', '@']))
+    });
+    if !valid_url {
+        return Err(GitxError::Message(format!(
+            "configured gitea catalog `{}` needs url set to the instance's http(s) web address, such as \"https://codeberg.org\"",
+            catalog.id
+        )));
+    }
+    if catalog.path.is_some() || catalog.command.is_some() || !catalog.action.is_empty() {
+        return Err(GitxError::Message(format!(
+            "configured gitea catalog `{}` cannot set path, command, or action; GitX derives the gitx inspect action",
+            catalog.id
+        )));
+    }
+    if catalog.label.as_deref().is_some_and(invalid_value)
+        || catalog.origin.is_some()
+        || catalog
+            .token_env
+            .as_deref()
+            .is_some_and(|name| !valid_identifier(name))
+    {
+        return Err(GitxError::Message(format!(
+            "configured gitea catalog `{}` has an invalid label or token_env, and cannot set origin",
+            catalog.id
+        )));
+    }
+    Ok(())
+}
+
+fn search_gitea_catalog(
+    catalog: &CatalogDefinition,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<CatalogCandidate>> {
+    let url = catalog.url.as_deref().expect("validated gitea catalog url");
+    let api = format!("{}/api/v1", url.trim_end_matches('/'));
+    let token = match &catalog.token_env {
+        Some(name) => Some(env::var(name).map_err(|_| {
+            GitxError::Message(format!(
+                "configured gitea catalog `{}` reads its token from `{name}`, which is not set",
+                catalog.id
+            ))
+        })?),
+        None => None,
+    };
+    let mut candidates = gitea_candidates(
+        &GiteaInstance {
+            label: catalog.label.as_deref().unwrap_or(&catalog.id),
+            api: &api,
+            token: token.as_deref(),
+            source_prefix: None,
+        },
+        query,
+        limit,
+    )?;
+    for candidate in &mut candidates {
+        candidate
+            .information
+            .insert("Catalog id".to_string(), catalog.id.clone());
+    }
+    Ok(candidates)
 }
 
 fn valid_identifier(id: &str) -> bool {
@@ -412,6 +509,7 @@ fn entry_to_candidate(
         match catalog.kind {
             CatalogKind::File => "file snapshot".to_string(),
             CatalogKind::Command => "command output".to_string(),
+            CatalogKind::Gitea => "Gitea API".to_string(),
         },
     );
     let version = entry.version.unwrap_or_default();
@@ -485,6 +583,8 @@ mod tests {
             command: None,
             format: CatalogFormat::Json,
             origin: Some("fixture catalog".to_string()),
+            url: None,
+            token_env: None,
             action: vec![
                 "toolctl".to_string(),
                 "install".to_string(),

@@ -45,14 +45,15 @@ commit.
 
 ## Source model
 
-`Source::parse` recognizes four source kinds and GitLab/Codeberg shorthand
-forms that become generic Git sources:
+`Source::parse` recognizes four source kinds and GitLab, Codeberg, Gitea and
+Forgejo shorthand forms that become generic Git sources:
 
 | Kind | Accepted form | Resolution |
 | --- | --- | --- |
 | Local | `./tool`, `../tool`, an absolute path, or an existing path | Classifies the path as local; running requires a directory and makes no cache copy |
 | GitHub | `github:owner/repo`, `github:owner/repo@ref`, `github:owner/repo#commit` | Expands to the repository's HTTPS Git URL |
 | GitLab or Codeberg | `gitlab:group/project@ref`, `codeberg:owner/repo#commit` | Expands to the forge HTTPS Git URL and follows generic Git execution rules |
+| Gitea or Forgejo | `gitea:host[:port][/subpath]/owner/repo@ref`, `forgejo:http://host/owner/repo#commit` | The last two segments are the repository and the rest is the instance. Expands to its Git URL, HTTPS unless `http://` is written |
 | Git | A recognized Git URL, optionally ending in `.git@ref` or `.git#commit` | Uses the supplied remote |
 | npm | `npm:package`, `npm:package@version`, including scoped names | Resolves against the public npm registry |
 

@@ -66,8 +66,22 @@ impl Source {
             return parse_hosted_git(trimmed, "gitlab", "https://gitlab.com");
         }
 
-        if trimmed.starts_with("codeberg:") {
-            return parse_hosted_git(trimmed, "codeberg", "https://codeberg.org");
+        if let Some(body) = trimmed.strip_prefix("codeberg:") {
+            let repository = body.split(['@', '#']).next().unwrap_or_default();
+            if repository.split('/').count() != 2 {
+                return Err(GitxError::InvalidHostedGitSource {
+                    host: "codeberg".to_string(),
+                    input: trimmed.to_string(),
+                });
+            }
+            return parse_gitea(trimmed, &format!("codeberg.org/{body}"));
+        }
+
+        if let Some(body) = trimmed
+            .strip_prefix("gitea:")
+            .or_else(|| trimmed.strip_prefix("forgejo:"))
+        {
+            return parse_gitea(trimmed, body);
         }
 
         if trimmed.starts_with("npm:") {
@@ -218,6 +232,37 @@ fn parse_hosted_git(input: &str, host: &str, web_base: &str) -> Result<Source> {
     Ok(Source::Git {
         raw: input.to_string(),
         remote: format!("{}/{path}.git", web_base.trim_end_matches('/')),
+        reference,
+    })
+}
+
+/// Gitea, Forgejo and Codeberg repositories are always `owner/repo`, so the
+/// last two segments name the repository and everything before them is the
+/// instance, including a port or a subpath install.
+fn parse_gitea(input: &str, body: &str) -> Result<Source> {
+    let invalid = || GitxError::InvalidGiteaSource {
+        input: input.to_string(),
+    };
+    let (path, reference) = split_github_reference(body);
+    let (scheme, path) = match path.split_once("://") {
+        Some((scheme @ ("http" | "https"), rest)) => (scheme, rest),
+        Some(_) => return Err(invalid()),
+        None => ("https", path),
+    };
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let segments: Vec<_> = path.split('/').collect();
+    if segments.len() < 3
+        || segments[0].contains('@')
+        || segments
+            .iter()
+            .any(|segment| segment.is_empty() || matches!(*segment, "." | ".."))
+    {
+        return Err(invalid());
+    }
+
+    Ok(Source::Git {
+        raw: input.to_string(),
+        remote: format!("{scheme}://{path}.git"),
         reference,
     })
 }
@@ -411,5 +456,45 @@ mod tests {
             Some("https://codeberg.org/owner/tool.git")
         );
         assert_eq!(codeberg.resolved_commit(), Some("abc1234"));
+    }
+
+    #[test]
+    fn parses_gitea_and_forgejo_instances_as_git_sources() {
+        for (input, remote, reference) in [
+            (
+                "gitea:git.example.com/owner/tool@v1.0.0",
+                "https://git.example.com/owner/tool.git",
+                Some(RefSpec::Named("v1.0.0".to_string())),
+            ),
+            (
+                "forgejo:git.example.com:3000/owner/tool.git#abc1234",
+                "https://git.example.com:3000/owner/tool.git",
+                Some(RefSpec::Commit("abc1234".to_string())),
+            ),
+            (
+                "gitea:http://10.0.0.5:3080/owner/tool@feature/x",
+                "http://10.0.0.5:3080/owner/tool.git",
+                Some(RefSpec::Named("feature/x".to_string())),
+            ),
+            (
+                "gitea:example.com/forge/owner/tool",
+                "https://example.com/forge/owner/tool.git",
+                None,
+            ),
+        ] {
+            let source = Source::parse(input).unwrap();
+            assert_eq!(source.resolved_remote(), Some(remote), "{input}");
+            assert_eq!(source.reference(), reference.as_ref(), "{input}");
+        }
+
+        for input in [
+            "gitea:owner/tool",
+            "gitea:ftp://example.com/owner/tool",
+            "gitea:user@example.com/owner/tool@main",
+            "gitea:example.com/owner/../tool",
+            "codeberg:group/subgroup/tool",
+        ] {
+            assert!(Source::parse(input).is_err(), "{input}");
+        }
     }
 }

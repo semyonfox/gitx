@@ -16,6 +16,11 @@ gitx exec prettier@3.6.2 --preview
 gitx exec prettier@3.6.2 --yes -- --check README.md
 ```
 
+`gitea:` and `forgejo:` work for any Gitea or Forgejo instance, Codeberg
+included. Write the instance's host, with a port or subpath if it has one,
+then `owner/repo`. GitX uses HTTPS unless you write `http://` in front of the
+host.
+
 `search`, `inspect`, and `--preview` do not execute a tool. `run` and `exec`
 ask before execution unless `--yes` is present.
 
@@ -94,6 +99,8 @@ gitx inspect ./tool
 gitx inspect github:owner/repo@v1.2.0
 gitx inspect gitlab:group/project@main
 gitx inspect codeberg:owner/repo@main
+gitx inspect gitea:git.example.com/owner/repo@main
+gitx inspect forgejo:http://10.0.0.5:3000/owner/repo#abc1234
 gitx inspect npm:prettier@3.6.2
 
 gitx run ./tool -- --fix

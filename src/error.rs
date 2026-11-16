@@ -12,6 +12,11 @@ pub enum GitxError {
     #[error("invalid {host} source `{input}`: expected {host}:owner/repo[@ref|#commit]")]
     InvalidHostedGitSource { host: String, input: String },
 
+    #[error(
+        "invalid Gitea or Forgejo source `{input}`: expected gitea:[http://]host[/path]/owner/repo[@ref|#commit]"
+    )]
+    InvalidGiteaSource { input: String },
+
     #[error("invalid npm source `{input}`: expected npm:<package>[@version]")]
     InvalidNpmSource { input: String },
 

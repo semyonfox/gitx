@@ -372,32 +372,64 @@ pub fn gitlab_candidates(query: &str, limit: usize) -> Result<Vec<CatalogCandida
 }
 
 pub fn codeberg_candidates(query: &str, limit: usize) -> Result<Vec<CatalogCandidate>> {
-    let client = http::search_client()?;
     let base = env::var("GITX_CODEBERG_API").unwrap_or_else(|_| CODEBERG_API.to_string());
-    let origin = format!("Codeberg API: {}", base.trim_end_matches('/'));
+    let token = env::var("CODEBERG_TOKEN").ok();
+    gitea_candidates(
+        &GiteaInstance {
+            label: "Codeberg",
+            api: &base,
+            token: token.as_deref(),
+            source_prefix: Some("codeberg:"),
+        },
+        query,
+        limit,
+    )
+}
+
+pub struct GiteaInstance<'a> {
+    pub label: &'a str,
+    /// the `/api/v1` base of the instance
+    pub api: &'a str,
+    pub token: Option<&'a str>,
+    /// a shorthand such as `codeberg:` that already names the host, otherwise
+    /// actions use `gitea:` plus the repository's web URL
+    pub source_prefix: Option<&'a str>,
+}
+
+/// Search one Gitea-compatible instance. Codeberg runs Forgejo, and Forgejo
+/// and Gitea share the `/api/v1/repos/search` contract.
+pub fn gitea_candidates(
+    instance: &GiteaInstance<'_>,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<CatalogCandidate>> {
+    let client = http::search_client()?;
+    let base = instance.api.trim_end_matches('/');
+    let label = instance.label;
+    let origin = format!("{label} API: {base}");
     let url = format!(
-        "{}/repos/search?q={}&limit={limit}",
-        base.trim_end_matches('/'),
+        "{base}/repos/search?q={}&limit={limit}",
         urlencoding::encode(query)
     );
     let mut request = client.get(url);
-    if let Ok(token) = env::var("CODEBERG_TOKEN") {
+    if let Some(token) = instance.token {
         request = request.bearer_auth(token);
     }
+    let context = format!("searching {label} repositories for `{query}`");
     let response = request
         .send()
         .map_err(|source| GitxError::Http {
-            context: format!("searching Codeberg repositories for `{query}`"),
+            context: context.clone(),
             source,
         })?
         .error_for_status()
         .map_err(|source| GitxError::Http {
-            context: format!("searching Codeberg repositories for `{query}`"),
+            context: context.clone(),
             source,
         })?
-        .json::<CodebergSearchResponse>()
+        .json::<GiteaSearchResponse>()
         .map_err(|source| GitxError::Http {
-            context: format!("decoding Codeberg repository search results for `{query}`"),
+            context: format!("decoding {label} repository search results for `{query}`"),
             source,
         })?;
 
@@ -411,38 +443,49 @@ pub fn codeberg_candidates(query: &str, limit: usize) -> Result<Vec<CatalogCandi
             let mut information = BTreeMap::new();
             information.insert("Stars".to_string(), repository.stars_count.to_string());
             information.insert("Forks".to_string(), repository.forks_count.to_string());
-            if let Some(language) = repository.language {
+            if let Some(language) = repository.language.filter(|language| !language.is_empty()) {
                 information.insert("Language".to_string(), language);
             }
             if repository.archived {
                 information.insert("Archived".to_string(), "yes".to_string());
             }
+            let repository_source = match instance.source_prefix {
+                Some(prefix) => format!("{prefix}{}", repository.full_name),
+                None => gitea_source(&repository.html_url),
+            };
+            let action = CatalogAction::new(
+                "Inspect",
+                format!(
+                    "gitx inspect {}",
+                    shell_quote(&format!(
+                        "{repository_source}@{}",
+                        repository.default_branch.as_deref().unwrap_or("HEAD")
+                    ))
+                ),
+            );
             CatalogCandidate {
-                source: "Codeberg repository".to_string(),
+                source: format!("{label} repository"),
                 origin: origin.clone(),
-                name: repository.full_name.clone(),
-                version: repository.default_branch.clone(),
-                description: repository.description,
+                name: repository.full_name,
+                version: repository.default_branch,
+                description: repository.description.filter(|text| !text.is_empty()),
                 homepage: Some(repository.html_url),
                 updated_at: repository.updated_at,
                 compatibility: Compatibility::unknown(
                     "inspect gitx.toml before GitX can determine runtime and host compatibility",
                 ),
                 information,
-                action: CatalogAction::new(
-                    "Inspect",
-                    format!(
-                        "gitx inspect {}",
-                        shell_quote(&format!(
-                            "codeberg:{}@{}",
-                            repository.full_name,
-                            repository.default_branch.as_deref().unwrap_or("HEAD")
-                        ))
-                    ),
-                ),
+                action,
             }
         })
         .collect())
+}
+
+/// https is the default for `gitea:`, so only a plain http instance keeps its scheme
+fn gitea_source(html_url: &str) -> String {
+    let location = html_url.trim_end_matches('/');
+    let location = location.strip_prefix("https://").unwrap_or(location);
+    format!("gitea:{location}")
 }
 
 pub fn aur_candidates(
@@ -730,15 +773,15 @@ struct GitLabProject {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodebergSearchResponse {
+struct GiteaSearchResponse {
     #[serde(default)]
-    data: Vec<CodebergRepository>,
+    data: Vec<GiteaRepository>,
     #[serde(default)]
-    items: Vec<CodebergRepository>,
+    items: Vec<GiteaRepository>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CodebergRepository {
+struct GiteaRepository {
     full_name: String,
     description: Option<String>,
     html_url: String,
