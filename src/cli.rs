@@ -22,7 +22,7 @@ use crate::{
     about = "Run and inspect tools from Git repos and package sources with preflight risk visibility."
 )]
 #[command(
-    after_help = "Start here:\n  gitx inspect ./my-tool\n  gitx run github:owner/repo@v1.0.0 -- --tool-flag\n  gitx exec prettier@3.6.2 -- --check README.md\n  gitx search formatter --source npm,github --details 1\n  gitx search formatter --device\n\nSources: local directories (`./tool`), GitX and platform-local catalogs, GitHub/GitLab/Codeberg repos, generic Git URLs, npm (`npm:package@version`), configured Bun registries, and the AUR catalog on Arch Linux.\nRun `gitx <command> --help` for command-specific examples and options."
+    after_help = "Start here:\n  gitx inspect ./my-tool\n  gitx run github:owner/repo@v1.0.0 -- --tool-flag\n  gitx exec prettier@3.6.2 -- --check README.md\n  gitx search formatter --source npm,github --details 1\n  gitx search formatter --device\n\nSources: local directories (`./tool`), GitX and platform-local catalogs, GitHub/GitLab/Codeberg/Gitea/Forgejo repos, generic Git URLs, npm (`npm:package@version`), configured Bun registries, and the AUR catalog on Arch Linux.\nRun `gitx <command> --help` for command-specific examples and options."
 )]
 pub struct Cli {
     /// Control ANSI colour in human-readable terminal output.

@@ -874,6 +874,72 @@ action = ["toolctl", "install", "{name}"]
 }
 
 #[test]
+fn configured_gitea_catalog_searches_the_instance_with_its_token() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 4096];
+        let read = stream.read(&mut request).unwrap();
+        let body = r#"{"ok":true,"data":[{"full_name":"acme/tool","description":"","html_url":"http://forge.test:3080/acme/tool","default_branch":"main","updated_at":null,"stars_count":1,"forks_count":0,"language":"","archived":false}]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+        String::from_utf8_lossy(&request[..read]).into_owned()
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("catalogs.toml");
+    std::fs::write(
+        &config,
+        format!(
+            r#"version = 1
+
+[[catalog]]
+id = "home-forge"
+label = "Home forge"
+kind = "gitea"
+url = "http://{address}/"
+token_env = "HOME_FORGE_TOKEN"
+"#
+        ),
+    )
+    .unwrap();
+
+    Command::cargo_bin("gitx")
+        .unwrap()
+        .env("GITX_CATALOG_CONFIG", &config)
+        .env("HOME_FORGE_TOKEN", "fixture-token")
+        .args([
+            "search",
+            "tool",
+            "--source",
+            "cache",
+            "--catalog",
+            "home-forge",
+            "--details",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Source: Home forge repository"))
+        .stdout(predicate::str::contains(
+            "Inspect: gitx inspect gitea:http://forge.test:3080/acme/tool@main",
+        ))
+        .stdout(predicate::str::contains("fixture-token").not());
+
+    let request = server.join().unwrap();
+    assert!(request.starts_with("GET /api/v1/repos/search?q=tool&limit="));
+    assert!(
+        request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer fixture-token")
+    );
+}
+
+#[test]
 fn device_mode_rejects_mixed_remote_source_selection() {
     Command::cargo_bin("gitx")
         .unwrap()

@@ -69,8 +69,9 @@ only network source.
 | `aur` | Arch User Repository search | The AUR package page |
 
 Git itself has no global package catalog. GitX therefore searches forge APIs
-for GitHub, GitLab, and Codeberg. A generic Git URL remains a direct source:
-`gitx inspect https://host.example/team/tool.git@main`.
+for GitHub, GitLab, and Codeberg. To search your own Gitea or Forgejo instance,
+add it as a [Gitea catalog](#gitea-and-forgejo-instances). A generic Git URL
+remains a direct source: `gitx inspect https://host.example/team/tool.git@main`.
 
 ### Bun registries
 
@@ -118,9 +119,10 @@ to `~/.config/gitx/catalogs.toml`. Set `GITX_CATALOG_CONFIG` to use a different
 file. `--catalog` is repeatable, accepts commas, and `--catalog all` selects
 every definition.
 
-There are two kinds. A `file` catalog reads a local JSON or JSON Lines
+There are three kinds. A `file` catalog reads a local JSON or JSON Lines
 snapshot. A `command` catalog runs a configured argument array and reads the
-same JSON contract from standard output. GitX never invokes a shell for either
+same JSON contract from standard output. A `gitea` catalog searches a Gitea or
+Forgejo instance, see [below](#gitea-and-forgejo-instances). GitX never invokes a shell for either
 the configured command or its action. The command form is useful for a private
 catalog client, a Nix index, an internal forge, or a package manager that GitX
 does not yet know about. It has the same five-second local command limit as a
@@ -169,9 +171,30 @@ the catalog definition and supports `{query}`, `{name}`, and `{version}`.
 An action that uses `{version}` requires a version on the matching record.
 
 `--offline`, `--device`, and `--source device` accept file catalogs only. GitX
-blocks command catalogs in those modes because a child command could contact a
-network even when its output looks local. A file snapshot is the way to get a
-strict, reproducible device-only view of a private catalog.
+blocks command and Gitea catalogs in those modes because they contact a network
+or could. A file snapshot is the way to get a strict, reproducible device-only
+view of a private catalog.
+
+### Gitea and Forgejo instances
+
+A `gitea` catalog searches any Gitea or Forgejo instance, such as a company
+forge or a self-hosted one. Set `url` to the instance's web address, including
+a subpath if it has one.
+
+```toml
+[[catalog]]
+id = "home-forge"
+label = "Home forge"
+kind = "gitea"
+url = "https://git.example.com"
+token_env = "HOME_FORGE_TOKEN"
+```
+
+`token_env` is optional and names the environment variable that holds an access
+token, so private repositories show up. GitX reads the token when it searches
+and never writes it anywhere. Each result offers
+`gitx inspect gitea:git.example.com/owner/repo@branch`. Gitea catalogs take no
+`path`, `command`, `action`, or `origin`.
 
 ## Candidate information
 
